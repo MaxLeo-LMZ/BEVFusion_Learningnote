@@ -45,13 +45,13 @@ struct CreateConvIndicePairFunctorP1<tv::GPU, Index, IndexGrid, NDim> {
     if (numActIn == 0) return 0;
     // auto timer = spconv::CudaContextTimer<>();
     if (transpose)
-      prepareDeConvIndicePairsKernel<Index, IndexGrid, NDim, 4096>
+      prepareDeConvIndicePairsKernel<Index, IndexGrid, NDim, 256>
           <<<tv::launch::getBlocks(numActIn), tv::launch::CUDA_NUM_THREADS, 0,
              d.getStream()>>>(indicesIn, indicesOut, gridsOut, indicePairs,
                               indiceNum, indicePairUnique, kernelSize, stride,
                               padding, dilation, outSpatialShape);
     else
-      prepareIndicePairsKernel<Index, IndexGrid, NDim, 4096>
+      prepareIndicePairsKernel<Index, IndexGrid, NDim, 256>
           <<<tv::launch::getBlocks(numActIn), tv::launch::CUDA_NUM_THREADS, 0,
              d.getStream()>>>(indicesIn, indicesOut, gridsOut, indicePairs,
                               indiceNum, indicePairUnique, kernelSize, stride,
@@ -116,7 +116,7 @@ struct CreateSubMIndicePairFunctor<tv::GPU, Index, IndexGrid, NDim> {
         <<<tv::launch::getBlocks(numActIn), tv::launch::CUDA_NUM_THREADS, 0,
            d.getStream()>>>(indicesIn, gridsOut, outSpatialShape);
     TV_CHECK_CUDA_ERR();
-    getSubMIndicePairsKernel<Index, IndexGrid, NDim, 4096>
+    getSubMIndicePairsKernel<Index, IndexGrid, NDim, 256>
         <<<tv::launch::getBlocks(numActIn), tv::launch::CUDA_NUM_THREADS, 0,
            d.getStream()>>>(indicesIn, gridsOut, indicePairs, indiceNum,
                             kernelSize, stride, padding, dilation,

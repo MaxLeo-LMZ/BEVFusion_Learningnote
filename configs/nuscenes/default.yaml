@@ -6,8 +6,8 @@ load_dim: 5
 use_dim: 5
 load_augmented: null
 
-point_cloud_range: [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-voxel_size: [0.1, 0.1, 0.2]
+point_cloud_range: [-20, -20, -1.0, 20, 20, 1.0]
+voxel_size: [1, 1, 2]
 image_size: [256, 704]
 
 augment2d:
@@ -183,9 +183,6 @@ train_pipeline:
       - lidar2image
       - img_aug_matrix
       - lidar_aug_matrix
-  -
-    type: GTDepth
-    keyframe_only: true 
 
 test_pipeline:
   -
@@ -259,13 +256,10 @@ test_pipeline:
       - lidar2image
       - img_aug_matrix
       - lidar_aug_matrix
-  -
-    type: GTDepth
-    keyframe_only: true 
 
 data:
-  samples_per_gpu: 4
-  workers_per_gpu: 4
+  samples_per_gpu: 1
+  workers_per_gpu: 1
   train:
     type: CBGSDataset
     dataset:
@@ -281,7 +275,7 @@ data:
       box_type_3d: LiDAR
   val:
     type: ${dataset_type}
-    dataset_root: ${dataset_root}
+    dataset_root: ${dataset_
     ann_file: ${dataset_root + "nuscenes_infos_val.pkl"}
     pipeline: ${test_pipeline}
     object_classes: ${object_classes}

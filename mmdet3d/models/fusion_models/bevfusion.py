@@ -55,19 +55,6 @@ class BEVFusion(Base3DFusionModel):
             )
             self.voxelize_reduce = encoders["lidar"].get("voxelize_reduce", True)
 
-        if encoders.get("radar") is not None:
-            if encoders["radar"]["voxelize"].get("max_num_points", -1) > 0:
-                voxelize_module = Voxelization(**encoders["radar"]["voxelize"])
-            else:
-                voxelize_module = DynamicScatter(**encoders["radar"]["voxelize"])
-            self.encoders["radar"] = nn.ModuleDict(
-                {
-                    "voxelize": voxelize_module,
-                    "backbone": build_backbone(encoders["radar"]["backbone"]),
-                }
-            )
-            self.voxelize_reduce = encoders["radar"].get("voxelize_reduce", True)
-
         if fuser is not None:
             self.fuser = build_fuser(fuser)
         else:
@@ -92,10 +79,6 @@ class BEVFusion(Base3DFusionModel):
                 if heads[name] is not None:
                     self.loss_scale[name] = 1.0
 
-        # If the camera's vtransform is a BEVDepth version, then we're using depth loss. 
-        self.use_depth_loss = ((encoders.get('camera', {}) or {}).get('vtransform', {}) or {}).get('type', '') in ['BEVDepth', 'AwareBEVDepth', 'DBEVDepth', 'AwareDBEVDepth']
-
-
         self.init_weights()
 
     def init_weights(self) -> None:
@@ -106,7 +89,6 @@ class BEVFusion(Base3DFusionModel):
         self,
         x,
         points,
-        radar_points,
         camera2ego,
         lidar2ego,
         lidar2camera,
@@ -116,7 +98,6 @@ class BEVFusion(Base3DFusionModel):
         img_aug_matrix,
         lidar_aug_matrix,
         img_metas,
-        gt_depths=None,
     ) -> torch.Tensor:
         B, N, C, H, W = x.size()
         x = x.view(B * N, C, H, W)
@@ -133,7 +114,6 @@ class BEVFusion(Base3DFusionModel):
         x = self.encoders["camera"]["vtransform"](
             x,
             points,
-            radar_points,
             camera2ego,
             lidar2ego,
             lidar2camera,
@@ -143,35 +123,21 @@ class BEVFusion(Base3DFusionModel):
             img_aug_matrix,
             lidar_aug_matrix,
             img_metas,
-            depth_loss=self.use_depth_loss, 
-            gt_depths=gt_depths,
         )
         return x
-    
-    def extract_features(self, x, sensor) -> torch.Tensor:
-        feats, coords, sizes = self.voxelize(x, sensor)
-        batch_size = coords[-1, 0] + 1
-        x = self.encoders[sensor]["backbone"](feats, coords, batch_size, sizes=sizes)
-        return x
-    
-    # def extract_lidar_features(self, x) -> torch.Tensor:
-    #     feats, coords, sizes = self.voxelize(x)
-    #     batch_size = coords[-1, 0] + 1
-    #     x = self.encoders["lidar"]["backbone"](feats, coords, batch_size, sizes=sizes)
-    #     return x
 
-    # def extract_radar_features(self, x) -> torch.Tensor:
-    #     feats, coords, sizes = self.radar_voxelize(x)
-    #     batch_size = coords[-1, 0] + 1
-    #     x = self.encoders["radar"]["backbone"](feats, coords, batch_size, sizes=sizes)
-    #     return x
+    def extract_lidar_features(self, x) -> torch.Tensor:
+        feats, coords, sizes = self.voxelize(x)
+        batch_size = coords[-1, 0] + 1
+        x = self.encoders["lidar"]["backbone"](feats, coords, batch_size, sizes=sizes)
+        return x
 
     @torch.no_grad()
     @force_fp32()
-    def voxelize(self, points, sensor):
+    def voxelize(self, points):
         feats, coords, sizes = [], [], []
         for k, res in enumerate(points):
-            ret = self.encoders[sensor]["voxelize"](res)
+            ret = self.encoders["lidar"]["voxelize"](res)
             if len(ret) == 3:
                 # hard voxelize
                 f, c, n = ret
@@ -196,36 +162,6 @@ class BEVFusion(Base3DFusionModel):
 
         return feats, coords, sizes
 
-    # @torch.no_grad()
-    # @force_fp32()
-    # def radar_voxelize(self, points):
-    #     feats, coords, sizes = [], [], []
-    #     for k, res in enumerate(points):
-    #         ret = self.encoders["radar"]["voxelize"](res)
-    #         if len(ret) == 3:
-    #             # hard voxelize
-    #             f, c, n = ret
-    #         else:
-    #             assert len(ret) == 2
-    #             f, c = ret
-    #             n = None
-    #         feats.append(f)
-    #         coords.append(F.pad(c, (1, 0), mode="constant", value=k))
-    #         if n is not None:
-    #             sizes.append(n)
-
-    #     feats = torch.cat(feats, dim=0)
-    #     coords = torch.cat(coords, dim=0)
-    #     if len(sizes) > 0:
-    #         sizes = torch.cat(sizes, dim=0)
-    #         if self.voxelize_reduce:
-    #             feats = feats.sum(dim=1, keepdim=False) / sizes.type_as(feats).view(
-    #                 -1, 1
-    #             )
-    #             feats = feats.contiguous()
-
-    #     return feats, coords, sizes
-
     @auto_fp16(apply_to=("img", "points"))
     def forward(
         self,
@@ -240,8 +176,6 @@ class BEVFusion(Base3DFusionModel):
         img_aug_matrix,
         lidar_aug_matrix,
         metas,
-        depths,
-        radar=None,
         gt_masks_bev=None,
         gt_bboxes_3d=None,
         gt_labels_3d=None,
@@ -262,8 +196,6 @@ class BEVFusion(Base3DFusionModel):
                 img_aug_matrix,
                 lidar_aug_matrix,
                 metas,
-                depths,
-                radar,
                 gt_masks_bev,
                 gt_bboxes_3d,
                 gt_labels_3d,
@@ -285,15 +217,12 @@ class BEVFusion(Base3DFusionModel):
         img_aug_matrix,
         lidar_aug_matrix,
         metas,
-        depths=None,
-        radar=None,
         gt_masks_bev=None,
         gt_bboxes_3d=None,
         gt_labels_3d=None,
         **kwargs,
     ):
         features = []
-        auxiliary_losses = {}
         for sensor in (
             self.encoders if self.training else list(self.encoders.keys())[::-1]
         ):
@@ -301,7 +230,6 @@ class BEVFusion(Base3DFusionModel):
                 feature = self.extract_camera_features(
                     img,
                     points,
-                    radar,
                     camera2ego,
                     lidar2ego,
                     lidar2camera,
@@ -311,17 +239,11 @@ class BEVFusion(Base3DFusionModel):
                     img_aug_matrix,
                     lidar_aug_matrix,
                     metas,
-                    gt_depths=depths,
                 )
-                if self.use_depth_loss:
-                    feature, auxiliary_losses['depth'] = feature[0], feature[-1]
             elif sensor == "lidar":
-                feature = self.extract_features(points, sensor)
-            elif sensor == "radar":
-                feature = self.extract_features(radar, sensor)
+                feature = self.extract_lidar_features(points)
             else:
                 raise ValueError(f"unsupported sensor: {sensor}")
-
             features.append(feature)
 
         if not self.training:
@@ -354,11 +276,6 @@ class BEVFusion(Base3DFusionModel):
                         outputs[f"loss/{type}/{name}"] = val * self.loss_scale[type]
                     else:
                         outputs[f"stats/{type}/{name}"] = val
-            if self.use_depth_loss:
-                if 'depth' in auxiliary_losses:
-                    outputs["loss/depth"] = auxiliary_losses['depth']
-                else:
-                    raise ValueError('Use depth loss is true, but depth loss not found')
             return outputs
         else:
             outputs = [{} for _ in range(batch_size)]
@@ -386,4 +303,3 @@ class BEVFusion(Base3DFusionModel):
                 else:
                     raise ValueError(f"unsupported head: {type}")
             return outputs
-
