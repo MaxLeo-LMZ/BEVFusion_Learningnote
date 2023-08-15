@@ -38,7 +38,8 @@ nus_attributes = (
     "None",
 )
 
-
+# 这个函数主要完成了以下任务：根据数据版本和预定义的训练/验证场景，生成训练和验证样本的信息数据，
+# 并将这些信息数据保存到 '.pkl' 文件中，以便后续在训练和评估中使用。
 def create_nuscenes_infos(
     root_path, info_prefix, version="v1.0-trainval", max_sweeps=10
 ):
@@ -58,9 +59,11 @@ def create_nuscenes_infos(
 
     nusc = NuScenes(version=version, dataroot=root_path, verbose=True)
     from nuscenes.utils import splits
-
+    # 定义了支持的nuScenes数据集版本
     available_vers = ["v1.0-trainval", "v1.0-test", "v1.0-mini"]
     assert version in available_vers
+    # 这部分代码根据指定的版本，确定了在训练集和验证集中要处理的场景列表。
+    # 这些列表来自于 nuscenes.utils.splits 中的预定义场景列表。
     if version == "v1.0-trainval":
         train_scenes = splits.train
         val_scenes = splits.val
@@ -74,10 +77,14 @@ def create_nuscenes_infos(
         raise ValueError("unknown")
 
     # filter existing scenes.
+    # 这部分代码使用 get_available_scenes 函数从nuScenes数据集中获取可用的场景信息。
+    # 然后，根据预定义的训练和验证场景，过滤出现有数据中真正存在的场景，这是为了确保只处理存在的场景。
     available_scenes = get_available_scenes(nusc)
     available_scene_names = [s["name"] for s in available_scenes]
     train_scenes = list(filter(lambda x: x in available_scene_names, train_scenes))
     val_scenes = list(filter(lambda x: x in available_scene_names, val_scenes))
+    # 这段代码的目的是将训练场景列表和验证场景列表中的场景名称转换为对应的token，
+    # 并将这些token存储在集合中，以便后续在数据处理中使用。这样做可以更高效地在数据集中查找和筛选出具体的场景。
     train_scenes = set(
         [
             available_scenes[available_scene_names.index(s)]["token"]
@@ -95,10 +102,12 @@ def create_nuscenes_infos(
         print(
             "train scene: {}, val scene: {}".format(len(train_scenes), len(val_scenes))
         )
+    # 这一部分调用 _fill_trainval_infos 函数，
+    # 该函数接收数据集、训练场景、验证场景、是否为测试集和最大连续帧数等参数，生成并填充训练样本和验证样本的信息。
     train_nusc_infos, val_nusc_infos = _fill_trainval_infos(
         nusc, train_scenes, val_scenes, test, max_sweeps=max_sweeps
     )
-
+    # 这一部分根据是否是测试集，生成相应的元数据和信息数据，然后使用 mmcv.dump 将这些数据保存为 '.pkl' 文件。
     metadata = dict(version=version)
     if test:
         print("test sample: {}".format(len(train_nusc_infos)))
@@ -118,7 +127,8 @@ def create_nuscenes_infos(
         info_val_path = osp.join(root_path, "{}_infos_val.pkl".format(info_prefix))
         mmcv.dump(data, info_val_path)
 
-
+# 这个函数 get_available_scenes(nusc) 的作用是从nuScenes数据集中获取可用的场景信息。
+# 它会遍历所有场景，并检查每个场景是否存在有效的LIDAR_TOP数据（激光雷达扫描数据），然后将符合条件的场景信息收集起来。
 def get_available_scenes(nusc):
     """Get available scenes from the input nuscenes class.
 
@@ -132,13 +142,20 @@ def get_available_scenes(nusc):
         available_scenes (list[dict]): List of basic information for the
             available scenes.
     """
+    # 初始化变量
     available_scenes = []
     print("total scene num: {}".format(len(nusc.scene)))
+    # 遍历所有场景
     for scene in nusc.scene:
+        # 对于每个场景，首先获取场景的token，然后使用token获取场景、样本和样本数据的记录（record）。
+        # 其中，LIDAR_TOP 是激光雷达的顶部扫描数据。
         scene_token = scene["token"]
         scene_rec = nusc.get("scene", scene_token)
         sample_rec = nusc.get("sample", scene_rec["first_sample_token"])
         sd_rec = nusc.get("sample_data", sample_rec["data"]["LIDAR_TOP"])
+        # 检查数据路径
+        # 这一部分代码检查LIDAR_TOP数据的路径。它循环获取样本数据中的LIDAR_TOP数据路径，然后判断路径是否有效。
+        # 如果路径无效，将 scene_not_exist 设置为 True，表示该场景不存在。
         has_more_frames = True
         scene_not_exist = False
         while has_more_frames:
@@ -153,10 +170,12 @@ def get_available_scenes(nusc):
                 break
             else:
                 break
+        # 如果场景存在并且LIDAR_TOP数据路径有效，则将该场景信息添加到 available_scenes 列表中。
         if scene_not_exist:
             continue
         available_scenes.append(scene)
     print("exist scene num: {}".format(len(available_scenes)))
+    # 函数返回收集到的所有可用场景的信息列表
     return available_scenes
 
 
@@ -175,9 +194,10 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
         tuple[list[dict]]: Information of training set and validation set
             that will be saved to the info file.
     """
+    # 初始化信息列表
     train_nusc_infos = []
     val_nusc_infos = []
-
+    # 遍历样本数据
     for sample in mmcv.track_iter_progress(nusc.sample):
         lidar_token = sample["data"]["LIDAR_TOP"]
         sd_rec = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
@@ -187,9 +207,9 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
             "log", nusc.get("scene", sample["scene_token"])["log_token"]
         )["location"]
         lidar_path, boxes, _ = nusc.get_sample_data(lidar_token)
-
+        # 检查文件是否存在
         mmcv.check_file_exist(lidar_path)
-
+        # 生成基本信息
         info = {
             "lidar_path": lidar_path,
             "token": sample["token"],
@@ -211,6 +231,8 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
         e2g_r_mat = Quaternion(e2g_r).rotation_matrix
 
         # obtain 6 image's information per frame
+        # 针对每个图像相机，获取相机的token，
+        # 并使用 obtain_sensor2top 函数获取相机的转换信息和内参，然后将这些信息存储在 info 字典的 cams 字段中。
         camera_types = [
             "CAM_FRONT",
             "CAM_FRONT_RIGHT",
@@ -229,6 +251,8 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
             info["cams"].update({cam: cam_info})
 
         # obtain sweeps for a single key-frame
+        # 获取连续帧的扫描信息，通过循环获取前一帧扫描数据的token，
+        # 并使用 obtain_sensor2top 函数获取其转换信息，然后将这些连续帧的信息存储在 info 字典的 sweeps 字段中。
         sd_rec = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
         sweeps = []
         while len(sweeps) < max_sweeps:
@@ -242,6 +266,7 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
                 break
         info["sweeps"] = sweeps
         # obtain annotation
+        # 如果不是在测试模式下，这部分代码获取样本的注释信息，包括物体的位置、尺寸、朝向、速度等。
         if not test:
             annotations = [
                 nusc.get("sample_annotation", token) for token in sample["anns"]

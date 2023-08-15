@@ -1,3 +1,4 @@
+# 这段代码的功能主要包括解析配置文件、设置运行环境、构建数据集和模型、进行训练，并在过程中记录日志。它是一个完整的训练程，用于训练3D物体检测模型。
 import argparse
 import copy
 import os
@@ -45,16 +46,19 @@ def main():
 
     # dump config 将配置保存到文件
     cfg.dump(os.path.join(cfg.run_dir, "configs.yaml"))
-
+    # 初始化日志记录器
     # init the logger before other steps
+    # 根据当前时间生成一个时间戳，并以时间戳作为文件名创建日志文件路径。然后，使用get_root_logger创建一个日志记录器。
     timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     log_file = os.path.join(cfg.run_dir, f"{timestamp}.log")
     logger = get_root_logger(log_file=log_file)
 
-    # log some basic info
+    # log some basic info 记录基本信息
     logger.info(f"Config:\n{cfg.pretty_text}")
 
     # set random seeds
+    # 如果配置中指定了随机seed（cfg.seed），则设置各种随机操作的种子，包括Python内置的随机数生成器、NumPy和PyTorch的随机数生成器，
+    # 以及根据配置的确定性（cfg.deterministic）设置PyTorch的cuDNN参数。
     if cfg.seed is not None:
         logger.info(
             f"Set random seed to {cfg.seed}, "
@@ -66,17 +70,20 @@ def main():
         if cfg.deterministic:
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
-
+    # 构建数据集
     datasets = [build_dataset(cfg.data.train)]
-
+    # 构建模型
+    # 使用build_model函数构建模型，然后进行权重初始化。如果配置中启用了同步批归一化（sync_bn），
+    # 则使用convert_sync_batchnorm将模型中的批归一化层转换为同步批归一化。
     model = build_model(cfg.model,)
     model.init_weights()
     if cfg.get("sync_bn", None):
         if not isinstance(cfg["sync_bn"], dict):
             cfg["sync_bn"] = dict(exclude=[])
         model = convert_sync_batchnorm(model, exclude=cfg["sync_bn"]["exclude"])
-
+    # 记录模型信息
     logger.info(f"Model:\n{model}")
+    # 训练模型，调用train_model函数来开始训练模型，传递模型、数据集、配置和其他参数。
     train_model(
         model,
         datasets,
@@ -86,7 +93,7 @@ def main():
         timestamp=timestamp,
     )
 
-
+# 执行主函数 这部分确保只有当脚本被直接执行时（而不是被导入到其他脚本中），才会运行主函数main()。
 if __name__ == "__main__":
     main()
 

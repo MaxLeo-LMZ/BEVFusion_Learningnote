@@ -1,9 +1,18 @@
+# 这段代码的主要任务是根据命令行参数准备nuScenes数据集相关的数据。
+# 具体操作包括创建基本信息、2D标注以及地面真值数据库等文件，以便后续在训练过程中使用。
 import argparse
 
 from data_converter import nuscenes_converter as nuscenes_converter
 from data_converter.create_gt_database import create_groundtruth_database
 
-
+# 这个函数用于准备与nuScenes数据集相关的数据。
+#   root_path: 数据集根目录。
+#   info_prefix: info文件名前缀。
+#   version: 数据集版本。
+#   dataset_name: 数据集名称。
+#   out_dir: 输出地面真值数据库信息的目录。
+#   max_sweeps: 每个样本的连续帧数，默认为10。
+#   load_augmented: 是否加载增强数据，通常是一些虚拟的传感器数据（可选）。
 def nuscenes_data_prep(
     root_path,
     info_prefix,
@@ -28,6 +37,13 @@ def nuscenes_data_prep(
     """
     if load_augmented is None:
         # otherwise, infos must have been created, we just skip.
+
+        # 给定原始数据，以pkl格式生成其相关信息文件。
+        # 参数:
+        #   root_path (str):数据根路径。
+        #   info_prefix (str):要生成的info文件前缀。
+        #   version (str):数据的版本。 默认值:“v1.0-trainval”
+        # max_scans (int):最大扫描次数。 默认值:10
         nuscenes_converter.create_nuscenes_infos(
             root_path, info_prefix, version=version, max_sweeps=max_sweeps
         )
@@ -42,6 +58,18 @@ def nuscenes_data_prep(
         # nuscenes_converter.export_2d_annotation(root_path, info_train_path, version=version)
         # nuscenes_converter.export_2d_annotation(root_path, info_val_path, version=version)
 
+    # 给定原始数据，生成地面真相数据库。
+    # 参数:
+    #   dataset_class_name (str):输入数据集的名称。
+    #   data_path (str):数据的路径。
+    #   info_prefix (str): info文件的前缀。
+    #   info_path (str): info文件路径。 默认值:没有。
+    #   mask_anno_path (str): mask_annono的路径。 默认值:没有。
+    #   used_classes (list[str]):类已被使用。 默认值:没有。
+    #   database_save_path (str):保存数据库的路径。 默认值:没有。
+    #   db_info_save_path (str): db_info的保存路径。 默认值:没有。
+    #   relative_path (bool):是否使用相对路径。 默认值:真的。
+    #   with_mask (bool):是否使用掩码。 默认值:False。
     create_groundtruth_database(
         dataset_name,
         root_path,
