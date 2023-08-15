@@ -1,7 +1,41 @@
 # BEVFusion
 
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/bevfusion-multi-task-multi-sensor-fusion-with/3d-object-detection-on-nuscenes)](https://paperswithcode.com/sota/3d-object-detection-on-nuscenes?p=bevfusion-multi-task-multi-sensor-fusion-with)
-[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/bevfusion-multi-task-multi-sensor-fusion-with/3d-multi-object-tracking-on-nuscenes)](https://paperswithcode.com/sota/3d-multi-object-tracking-on-nuscenes?p=bevfusion-multi-task-multi-sensor-fusion-with)
+本Fork代码仓库作为本人记录学习BEVFusion的学习笔记使用，会逐步理解代码并添加大量中文注释。
+本仓库代码已参照[《bevfusion单显卡训练/测试》](https://blog.csdn.net/ll594282475/article/details/127925826?spm=1001.2014.3001.5502)做了单GPU训练和测试的修改。
+并在本人主机上做过了测试。
+
+## 数据预处理
+```bash
+# nusenes数据集
+python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes
+# nusences mini 数据集
+python tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes  --version v1.0-mini
+```
+## 单卡训练
+```bash
+# 多模态（常用）
+CUDA_VISIBLE_DEVICES=0 python tools/train_single_gpu.py \
+        configs/nuscenes/det/transfusion/secfpn/camera+lidar/swint_v0p075/convfuser.yaml \
+        --model.encoders.camera.backbone.init_cfg.checkpoint pretrained/swint-nuimages-pretrained.pth \
+        --load_from pretrained/lidar-only-det.pth \
+        --run-dir output/bev_result/
+# 图像
+CUDA_VISIBLE_DEVICES=0 python tools/train_single_gpu.py \ 
+        configs/nuscenes/det/centerhead/lssfpn/camera/256x704/swint/default.yaml \
+        --model.encoders.camera.backbone.init_cfg.checkpoint pretrained/swint-nuimages-pretrained.pth \
+        --run-dir output/image_result/
+# 点云
+CUDA_VISIBLE_DEVICES=0 python tools/train_single_gpu.py \ 
+        configs/nuscenes/det/transfusion/secfpn/lidar/voxelnet_0p075.yaml \ 
+        --run-dir output/lidar_result/
+```
+## 单卡测试
+```bash
+# 单卡测试（常用）
+CUDA_VISIBLE_DEVICES=0 python tools/test_single_gpu.py \
+        configs/nuscenes/det/transfusion/secfpn/camera+lidar/swint_v0p075/convfuser.yaml \
+        pretrained/bevfusion-det.pth --eval bbox
+```
 
 ### [website](http://bevfusion.mit.edu/) | [paper](https://arxiv.org/abs/2205.13542) | [video](https://www.youtube.com/watch?v=uCAka90si9E)
 
@@ -11,7 +45,7 @@
 
 **If you are interested in getting updates, please sign up [here](https://docs.google.com/forms/d/e/1FAIpQLSfkmfsX45HstL5rUQlS7xJthhS3Z_Pm2NOVstlXUqgaK4DEfQ/viewform) to get notified!**
 
-- **(2023/1/16)** BEVFusion is accepted to ICRA 2023!
+
 - **(2022/8/16)** BEVFusion ranks first on [Waymo](https://waymo.com/open/challenges/2020/3d-detection/) 3D object detection leaderboard among all solutions.
 - **(2022/6/3)** BEVFusion ranks first on [nuScenes](https://nuscenes.org/object-detection?externalData=all&mapData=all&modalities=Any) among all solutions.
 - **(2022/6/3)** We released the first version of BEVFusion (with pre-trained checkpoints and evaluation).
