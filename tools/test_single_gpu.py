@@ -1,3 +1,6 @@
+# 这份代码主要用于测试模型在测试数据集上的性能，执行相应的结果保存、格式化和评估等操作。
+# 它首先解析命令行参数，加载配置文件，根据配置构建数据集和加载器，构建模型并加载权重，然后进行推理并根据配置处理结果。
+# 最后，如果启用了评估操作，它将根据配置进行评估。
 import argparse
 import copy
 import os
@@ -114,34 +117,39 @@ def parse_args():
 
 # @profile(precision=4,stream=open('memory_profiler.log','w+'))
 def main():
-
+    # 解析命令行参数
     args = parse_args()
-
+    # 设置 cudnn benchmark，以提升训练速度
     torch.backends.cudnn.benchmark = True
+    # 确保至少指定一种操作（保存/评估/格式化/展示结果）
     assert args.out or args.eval or args.format_only or args.show or args.show_dir,(
         "Please specify at least one operation (save/eval/format/show the "
         'results / save the results) with the argument "--out", "--eval"'
         ', "--format-only", "--show" or "--show-dir"')
-
+    # 避免同时指定 --eval 和 --format_only 参数
     if args.eval and args.format_only:
         raise ValueError("--eval and --format_only cannot be both specified")
-
+    # 输出文件必须为 pkl 文件
     if args.out is not None and not args.out.endswith((".pkl", ".pickle")):
         raise ValueError("The output file must be a pkl file.")
+    # 加载配置文件
     configs.load(args.config, recursive=True)
     cfg = Config(recursive_eval(configs), filename=args.config)
     print(cfg)
-
+    # 根据参数中的配置选项更新配置
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
     # set cudnn_betchmark
+    # 设置 cudnn_benchmark，以提升推理速度
     if cfg.get("cudnn_betchmark", False):
         torch.backends.cudnn.benchmark = True
-
+    # 取消使用预训练权重
     cfg.model.pretrained = None
     # in case the test dataset is concatenated
+    # 在测试模式下，每个 GPU 处理一个样本
     samples_per_gpu = 1
+    # 检查配置中的测试数据集信息，并适应不同的数据加载方式
     if isinstance(cfg.data.test, dict):
         cfg.data.test.test_mode = True
         samples_per_gpu = cfg.data.test.pop("samples_per_gpu", 1)
@@ -159,12 +167,14 @@ def main():
                 ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
 
         # init distributed env first, since logger depends on the dist info.
+    # 初始化分布式环境
     distributed = False
     # distributed = True
     # set random seeds
+    # 如果指定了随机种子，则设置随机种子
     if args.seed is not None:
         set_random_seed(args.seed, deterministic=args.deterministic)
-
+    # 构建数据集对象和数据加载器
     # build the dataloader
     dataset = build_dataset(cfg.data.test)
     data_loader = build_dataloader(
@@ -176,6 +186,7 @@ def main():
     )
 
     # build the model and load checkpoint
+    # 构建模型并加载 checkpoint
     cfg.model.train_cfg = None
     model = build_model(cfg.model, test_cfg=cfg.get("test_cfg"))
     fp16_cfg = cfg.get("fp16", None)
@@ -186,6 +197,7 @@ def main():
         model = fuse_conv_bn(model)
     # old versions did not save class info in checkpoints, this walkaround is
     # for backward compatibility
+    # 为模型设置类别信息
     if "CLASSES" in checkpoint.get("meta", {}):
         model.CLASSES = checkpoint["meta"]["CLASSES"]
     else:
@@ -202,7 +214,7 @@ def main():
             broadcast_buffers=False,
         )
         outputs = multi_gpu_test(model, data_loader, args.tmpdir, args.gpu_collect)
-
+    # 单 GPU 或多 GPU 测试
     rank, _ = get_dist_info()
     if rank == 0:
         if args.out:
@@ -214,6 +226,7 @@ def main():
         if args.eval:
             eval_kwargs = cfg.get("evaluation", {}).copy()
             # hard-code way to remove EvalHook args
+            # 移除 EvalHook 的参数
             for key in [
                 "interval",
                 "tmpdir",

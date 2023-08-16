@@ -12,23 +12,28 @@ from mmdet3d.core.bbox import box_np_ops as box_np_ops
 from mmdet3d.datasets import build_dataset
 from mmdet.core.evaluation.bbox_overlaps import bbox_overlaps
 
-
+# 该函数用于将不同格式的掩码信息（多边形、未压缩的RLE编码、RLE编码）转换为掩码图像，以便在图像上进行掩码操作
 def _poly2mask(mask_ann, img_h, img_w):
+    # 如果 mask_ann 是一个列表，则说明是多边形，将多边形的每个部分转换为RLE编码，然后将所有RLE编码合并为一个
     if isinstance(mask_ann, list):
         # polygon -- a single object might consist of multiple parts
         # we merge all parts into one mask rle code
         rles = maskUtils.frPyObjects(mask_ann, img_h, img_w)
         rle = maskUtils.merge(rles)
+    # 如果 mask_ann 的结构与未压缩的RLE编码类似，则使用 maskUtils.frPyObjects 函数将其转换为RLE编码
     elif isinstance(mask_ann["counts"], list):
         # uncompressed RLE
         rle = maskUtils.frPyObjects(mask_ann, img_h, img_w)
+    # 如果以上两种情况都不是，则说明 mask_ann 是RLE编码，直接使用该编码
     else:
         # rle
         rle = mask_ann
+    # 使用 maskUtils.decode 函数将RLE编码的掩码解码为掩码图像
     mask = maskUtils.decode(rle)
     return mask
 
-
+# 该函数用于解析 COCO 格式的标注信息，
+# 并将其转换为适用于目标检测和实例分割任务的数据结构，包括目标边界框、类别标签、被忽略的边界框和掩码信息
 def _parse_coco_ann_info(ann_info):
     gt_bboxes = []
     gt_labels = []
@@ -47,7 +52,8 @@ def _parse_coco_ann_info(ann_info):
         else:
             gt_bboxes.append(bbox)
             gt_masks_ann.append(ann["segmentation"])
-
+    # 将 gt_bboxes、gt_labels、gt_bboxes_ignore 转换为 NumPy 数组，
+    # 如果其中某个数组为空，则创建一个形状为 (0, 4) 的空数组。
     if gt_bboxes:
         gt_bboxes = np.array(gt_bboxes, dtype=np.float32)
         gt_labels = np.array(gt_labels, dtype=np.int64)
@@ -59,12 +65,13 @@ def _parse_coco_ann_info(ann_info):
         gt_bboxes_ignore = np.array(gt_bboxes_ignore, dtype=np.float32)
     else:
         gt_bboxes_ignore = np.zeros((0, 4), dtype=np.float32)
-
+    # 创建一个字典 ann，将目标的边界框、被忽略的边界框和掩码存储其中
     ann = dict(bboxes=gt_bboxes, bboxes_ignore=gt_bboxes_ignore, masks=gt_masks_ann)
 
     return ann
 
-
+# 该函数的目的是将给定的正样本 proposals 和相关的 ground truth 掩码，通过 RoIAlign 操作，裁剪成指定大小的图像块。
+# 这通常在目标检测和实例分割任务中用于生成训练数据。
 def crop_image_patch_v2(pos_proposals, pos_assigned_gt_inds, gt_masks):
     import torch
     from torch.nn.modules.utils import _pair
@@ -87,7 +94,8 @@ def crop_image_patch_v2(pos_proposals, pos_assigned_gt_inds, gt_masks):
     targets = roi_align(gt_masks_th, rois, mask_size[::-1], 1.0, 0, True).squeeze(1)
     return targets
 
-
+# 该函数的目的是从给定的正样本 proposals、ground truth 掩码、正样本关联的 ground truth 索引和原始图像中裁剪出对应的图像块和掩码，
+# 通常在实例分割任务中用于生成训练数据
 def crop_image_patch(pos_proposals, gt_masks, pos_assigned_gt_inds, org_img):
     num_pos = pos_proposals.shape[0]
     masks = []
@@ -107,7 +115,8 @@ def crop_image_patch(pos_proposals, gt_masks, pos_assigned_gt_inds, org_img):
         masks.append(mask_patch)
     return img_patches, masks
 
-
+# 构建一个用于训练的数据库，其中包含了点云、标注信息和可能的掩码等。它首先根据不同的数据集类名进行不同的数据集配置，
+# 然后遍历数据集中的每个样本，生成数据库的信息和保存数据。数据库信息包括了物体的标签、路径、位置信息等.
 def create_groundtruth_database(
     dataset_class_name,
     data_path,
@@ -147,9 +156,11 @@ def create_groundtruth_database(
             Default: False.
     """
     print(f"Create GT Database of {dataset_class_name}")
+    # 构建数据集配置字典
     dataset_cfg = dict(
         type=dataset_class_name, dataset_root=data_path, ann_file=info_path
     )
+    # 根据数据集类名进行特定配置
     if dataset_class_name == "KittiDataset":
         dataset_cfg.update(
             test_mode=False,
@@ -176,6 +187,7 @@ def create_groundtruth_database(
         )
 
     elif dataset_class_name == "NuScenesDataset":
+        # 根据是否使用增强数据加载来进行配置
         if not load_augmented:
             dataset_cfg.update(
                 use_valid_flag=True,
@@ -248,15 +260,18 @@ def create_groundtruth_database(
                 ),
             ],
         )
-
+    # 构建数据集对象
     dataset = build_dataset(dataset_cfg)
-
+    # 设置数据库保存路径和信息保存路径
     if database_save_path is None:
         database_save_path = osp.join(data_path, f"{info_prefix}_gt_database")
     if db_info_save_path is None:
         db_info_save_path = osp.join(data_path, f"{info_prefix}_dbinfos_train.pkl")
+    # 创建数据库保存目录
     mmcv.mkdir_or_exist(database_save_path)
+    # 初始化数据库信息字典
     all_db_infos = dict()
+    # 如果需要使用掩码，加载COCO标注文件，并建立文件名到图像ID的映射
     if with_mask:
         coco = COCO(osp.join(data_path, mask_anno_path))
         imgIds = coco.getImgIds()
@@ -264,9 +279,11 @@ def create_groundtruth_database(
         for i in imgIds:
             info = coco.loadImgs([i])[0]
             file2id.update({info["file_name"]: i})
-
+    # 初始化组计数器
     group_counter = 0
+    # 遍历数据集中的每一个样本
     for j in track_iter_progress(list(range(len(dataset)))):
+        # 获取数据信息
         input_dict = dataset.get_data_info(j)
         dataset.pre_pipeline(input_dict)
         example = dataset.pipeline(input_dict)
@@ -276,6 +293,8 @@ def create_groundtruth_database(
         gt_boxes_3d = annos["gt_bboxes_3d"].tensor.numpy()
         names = annos["gt_names"]
         group_dict = dict()
+
+        # 如果存在"group_ids"，则获取group_ids，否则创建默认的group_ids
         if "group_ids" in annos:
             group_ids = annos["group_ids"]
         else:
@@ -283,12 +302,13 @@ def create_groundtruth_database(
         difficulty = np.zeros(gt_boxes_3d.shape[0], dtype=np.int32)
         if "difficulty" in annos:
             difficulty = annos["difficulty"]
-
+        # 获取物体个数
         num_obj = gt_boxes_3d.shape[0]
+        # 根据点在3D边界框内的情况，计算点索引
         point_indices = box_np_ops.points_in_rbbox(points, gt_boxes_3d)
-
+        # 如果需要使用掩码
         if with_mask:
-            # prepare masks
+            # prepare masks 准备掩码
             gt_boxes = annos["gt_bboxes"]
             img_path = osp.split(example["img_info"]["filename"])[-1]
             if img_path not in file2id.keys():
@@ -301,6 +321,7 @@ def create_groundtruth_database(
             h, w = annos["img_shape"][:2]
             gt_masks = [_poly2mask(mask, h, w) for mask in kins_ann_info["masks"]]
             # get mask inds based on iou mapping
+            # 根据IoU映射获取掩码索引
             bbox_iou = bbox_overlaps(kins_ann_info["bboxes"], gt_boxes)
             mask_inds = bbox_iou.argmax(axis=0)
             valid_inds = bbox_iou.max(axis=0) > 0.5
@@ -313,31 +334,36 @@ def create_groundtruth_database(
             # object_img_patches = crop_image_patch_v2(
             #     torch.Tensor(gt_boxes),
             #     torch.Tensor(mask_inds).long(), object_img_patches)
+            # 根据掩码进行图像掩盖
             object_img_patches, object_masks = crop_image_patch(
                 gt_boxes, gt_masks, mask_inds, annos["img"]
             )
-
+        # 遍历每个物体
         for i in range(num_obj):
+            # 构建文件名、绝对文件路径和相对文件路径
             filename = f"{image_idx}_{names[i]}_{i}.bin"
             abs_filepath = osp.join(database_save_path, filename)
             rel_filepath = osp.join(f"{info_prefix}_gt_database", filename)
 
             # save point clouds and image patches for each object
+            # 获取对应物体的点云，并减去物体3D边界框的中心坐标
             gt_points = points[point_indices[:, i]]
             gt_points[:, :3] -= gt_boxes_3d[i, :3]
-
+            # 如果使用掩码
             if with_mask:
+                # 跳过空掩码或无效掩码的物体
                 if object_masks[i].sum() == 0 or not valid_inds[i]:
                     # Skip object for empty or invalid mask
                     continue
                 img_patch_path = abs_filepath + ".png"
                 mask_patch_path = abs_filepath + ".mask.png"
+                # 保存图像和掩码图像
                 mmcv.imwrite(object_img_patches[i], img_patch_path)
                 mmcv.imwrite(object_masks[i], mask_patch_path)
-
+            # 将点云数据写入二进制文件
             with open(abs_filepath, "w") as f:
                 gt_points.tofile(f)
-
+            # 构建数据库信息字典
             if (used_classes is None) or names[i] in used_classes:
                 db_info = {
                     "name": names[i],
@@ -349,6 +375,7 @@ def create_groundtruth_database(
                     "difficulty": difficulty[i],
                 }
                 local_group_id = group_ids[i]
+                # 如果本地组ID尚未存在于group_dict中，则添加
                 # if local_group_id >= 0:
                 if local_group_id not in group_dict:
                     group_dict[local_group_id] = group_counter
@@ -358,13 +385,14 @@ def create_groundtruth_database(
                     db_info["score"] = annos["score"][i]
                 if with_mask:
                     db_info.update({"box2d_camera": gt_boxes[i]})
+                # 如果names[i]已经在all_db_infos中，则追加信息，否则新建列表
                 if names[i] in all_db_infos:
                     all_db_infos[names[i]].append(db_info)
                 else:
                     all_db_infos[names[i]] = [db_info]
-
+    # 打印数据库信息
     for k, v in all_db_infos.items():
         print(f"load {len(v)} {k} database infos")
-
+    # 将数据库信息字典保存为二进制文件
     with open(db_info_save_path, "wb") as f:
         pickle.dump(all_db_infos, f)

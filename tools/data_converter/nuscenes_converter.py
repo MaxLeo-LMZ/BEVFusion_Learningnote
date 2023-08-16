@@ -288,16 +288,18 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
             ).reshape(-1)
             # convert velo from global to lidar
             for i in range(len(boxes)):
+                # 速度转换
                 velo = np.array([*velocity[i], 0.0])
                 velo = velo @ np.linalg.inv(e2g_r_mat).T @ np.linalg.inv(l2e_r_mat).T
                 velocity[i] = velo[:2]
-
+            # 名称印射
             names = [b.name for b in boxes]
             for i in range(len(names)):
                 if names[i] in NuScenesDataset.NameMapping:
                     names[i] = NuScenesDataset.NameMapping[names[i]]
             names = np.array(names)
             # we need to convert rot to SECOND format.
+            # 物体边界框信息的处理
             gt_boxes = np.concatenate([locs, dims, -rots - np.pi / 2], axis=1)
             assert len(gt_boxes) == len(
                 annotations
@@ -308,19 +310,22 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
             info["num_lidar_pts"] = np.array([a["num_lidar_pts"] for a in annotations])
             info["num_radar_pts"] = np.array([a["num_radar_pts"] for a in annotations])
             info["valid_flag"] = valid_flag
-
+        # 根据样本所属的场景判断是训练集还是验证集，并将信息添加到相应的列表中
         if sample["scene_token"] in train_scenes:
             train_nusc_infos.append(info)
         else:
             val_nusc_infos.append(info)
-
+    # 函数返回生成的训练集和验证集的信息列表。
     return train_nusc_infos, val_nusc_infos
 
-
+# 函数的目的是将特定传感器坐标系下的数据转换到激光雷达坐标系下，以便进行数据的统一处理。
+# 函数最终返回了经过坐标系变换后的信息，该信息包括传感器数据路径、类型、令牌、平移和旋转信息等。
+# 这些信息将用于数据处理和训练过程
 def obtain_sensor2top(
     nusc, sensor_token, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, sensor_type="lidar"
 ):
     """Obtain the info with RT matric from general sensor to Top LiDAR.
+
 
     Args:
         nusc (class): Dataset class in the nuScenes dataset.
@@ -334,15 +339,23 @@ def obtain_sensor2top(
             in shape (3, 3).
         sensor_type (str): Sensor to calibrate. Default: 'lidar'.
 
+        nusc: nuScenes数据集的类实例。
+        sensor_token: 指定传感器类型的样本数据令牌。
+        l2e_t、l2e_r_mat: 从激光雷达到车辆坐标系的平移和旋转矩阵。
+        e2g_t、e2g_r_mat: 从车辆坐标系到全局坐标系的平移和旋转矩阵。
+        sensor_type: 传感器类型，默认为 'lidar'
     Returns:
         sweep (dict): Sweep information after transformation.
     """
+    # 获取传感器数据、传感器校准信息和车辆位姿信息等。
     sd_rec = nusc.get("sample_data", sensor_token)
     cs_record = nusc.get("calibrated_sensor", sd_rec["calibrated_sensor_token"])
     pose_record = nusc.get("ego_pose", sd_rec["ego_pose_token"])
     data_path = str(nusc.get_sample_data_path(sd_rec["token"]))
+    # 将传感器数据的路径转换为相对路径
     if os.getcwd() in data_path:  # path from lyftdataset is absolute path
         data_path = data_path.split(f"{os.getcwd()}/")[-1]  # relative path
+    # 构建转换后的信息
     sweep = {
         "data_path": data_path,
         "type": sensor_type,
@@ -353,6 +366,7 @@ def obtain_sensor2top(
         "ego2global_rotation": pose_record["rotation"],
         "timestamp": sd_rec["timestamp"],
     }
+    # 计算从传感器坐标系到激光雷达坐标系的旋转矩阵 R 和平移向量 T。最后，将变换信息存储在 sweep 字典中。
     l2e_r_s = sweep["sensor2ego_rotation"]
     l2e_t_s = sweep["sensor2ego_translation"]
     e2g_r_s = sweep["ego2global_rotation"]
@@ -385,8 +399,14 @@ def export_2d_annotation(root_path, info_path, version, mono3d=True):
         info_path (str): Path of the info file.
         version (str): Dataset version.
         mono3d (bool): Whether to export mono3d annotation. Default: True.
+
+        root_path: 原始数据的根路径。
+        info_path: 信息文件的路径。
+        version: 数据集版本。
+        mono3d: 是否导出mono3d标注，默认为 True。
     """
     # get bbox annotations for camera
+    # 获取相机类型列表
     camera_types = [
         "CAM_FRONT",
         "CAM_FRONT_RIGHT",
@@ -395,15 +415,19 @@ def export_2d_annotation(root_path, info_path, version, mono3d=True):
         "CAM_BACK_LEFT",
         "CAM_BACK_RIGHT",
     ]
+    # 加载信息文件和NuScenes数据集类实例
     nusc_infos = mmcv.load(info_path)["infos"]
     nusc = NuScenes(version=version, dataroot=root_path, verbose=True)
     # info_2d_list = []
+    # 定义COCO格式中的类别映射
     cat2Ids = [
         dict(id=nus_categories.index(cat_name), name=cat_name)
         for cat_name in nus_categories
     ]
+    # 初始化COCO格式的标注信息
     coco_ann_id = 0
     coco_2d_dict = dict(annotations=[], images=[], categories=cat2Ids)
+    # 遍历每个信息并导出2D标注
     for info in mmcv.track_iter_progress(nusc_infos):
         for cam in camera_types:
             cam_info = info["cams"][cam]
@@ -436,13 +460,15 @@ def export_2d_annotation(root_path, info_path, version, mono3d=True):
                 coco_info["id"] = coco_ann_id
                 coco_2d_dict["annotations"].append(coco_info)
                 coco_ann_id += 1
+    # 根据 mono3d 参数设置导出文件的前缀
     if mono3d:
         json_prefix = f"{info_path[:-4]}_mono3d"
     else:
         json_prefix = f"{info_path[:-4]}"
+    # 将COCO格式的标注信息保存到JSON文件中
     mmcv.dump(coco_2d_dict, f"{json_prefix}.coco.json")
 
-
+# 该函数的目的是从给定的 sample_data_token 获取满足条件的标注记录，并生成对应的 2D 投影坐标。
 def get_2d_boxes(nusc, sample_data_token: str, visibilities: List[str], mono3d=True):
     """Get the 2D annotation records for a given `sample_data_token`.
 
@@ -452,12 +478,17 @@ def get_2d_boxes(nusc, sample_data_token: str, visibilities: List[str], mono3d=T
         visibilities (list[str]): Visibility filter.
         mono3d (bool): Whether to get boxes with mono3d annotation.
 
+        nusc: NuScenes 数据集类实例。
+        sample_data_token: 一个属于相机关键帧的样本数据标识。
+        visibilities: 可见性筛选列表。
+        mono3d: 是否获取具有 mono3d 标注的框，默认为 True。
     Return:
         list[dict]: List of 2D annotation record that belongs to the input
             `sample_data_token`.
     """
 
     # Get the sample data and the sample corresponding to that sample data.
+    # 获取 sample_data 和与之相关的样本信息 sample
     sd_rec = nusc.get("sample_data", sample_data_token)
 
     assert sd_rec["sensor_modality"] == "camera", (
@@ -465,23 +496,25 @@ def get_2d_boxes(nusc, sample_data_token: str, visibilities: List[str], mono3d=T
     )
     if not sd_rec["is_key_frame"]:
         raise ValueError("The 2D re-projections are available only for keyframes.")
-
+    # 获取 sample_data 和与之相关的样本信息 sample
     s_rec = nusc.get("sample", sd_rec["sample_token"])
 
     # Get the calibrated sensor and ego pose
     # record to get the transformation matrices.
+    # 获取校准的传感器和车辆位置信息，用于获取转换矩阵
     cs_rec = nusc.get("calibrated_sensor", sd_rec["calibrated_sensor_token"])
     pose_rec = nusc.get("ego_pose", sd_rec["ego_pose_token"])
     camera_intrinsic = np.array(cs_rec["camera_intrinsic"])
 
     # Get all the annotation with the specified visibilties.
+    # 获取满足可见性条件的标注记录
     ann_recs = [nusc.get("sample_annotation", token) for token in s_rec["anns"]]
     ann_recs = [
         ann_rec for ann_rec in ann_recs if (ann_rec["visibility_token"] in visibilities)
     ]
 
     repro_recs = []
-
+    # 对满足条件的标注记录进行处理，生成 2D 投影坐标
     for ann_rec in ann_recs:
         # Augment sample_annotation with token information.
         ann_rec["sample_annotation_token"] = ann_rec["token"]
@@ -525,6 +558,7 @@ def get_2d_boxes(nusc, sample_data_token: str, visibilities: List[str], mono3d=T
         )
 
         # If mono3d=True, add 3D annotations in camera coordinates
+        #　若 mono3d 为 True，添加 3D 注释信息
         if mono3d and (repro_rec is not None):
             loc = box.center.tolist()
 
@@ -565,7 +599,7 @@ def get_2d_boxes(nusc, sample_data_token: str, visibilities: List[str], mono3d=T
             repro_rec["attribute_id"] = attr_id
 
         repro_recs.append(repro_rec)
-
+    # 返回最终的处理结果
     return repro_recs
 
 
@@ -580,14 +614,20 @@ def post_process_coords(
             bounding box.
         imsize (tuple[int]): Size of the image canvas.
 
+        corner_coords：投影后的边界框角点坐标列表。
+        imsize：图像画布的大小，作为一个元组 (width, height)
+
     Return:
         tuple [float]: Intersection of the convex hull of the 2D box
             corners and the image canvas.
     """
+    # 通过投影后的边界框角点坐标列表生成多边形的凸包
     polygon_from_2d_box = MultiPoint(corner_coords).convex_hull
+    # 创建图像画布的边界框
     img_canvas = box(0, 0, imsize[0], imsize[1])
-
+    # 检查凸包是否与图像画布相交
     if polygon_from_2d_box.intersects(img_canvas):
+        # 计算交集的矩形边界框坐标
         img_intersection = polygon_from_2d_box.intersection(img_canvas)
         intersection_coords = np.array(
             [coord for coord in img_intersection.exterior.coords]
@@ -597,12 +637,12 @@ def post_process_coords(
         min_y = min(intersection_coords[:, 1])
         max_x = max(intersection_coords[:, 0])
         max_y = max(intersection_coords[:, 1])
-
+        # 返回交集的矩形边界框坐标或 None
         return min_x, min_y, max_x, max_y
     else:
         return None
 
-
+# 根据给定的2D边界框坐标和其他信息，生成一个符合COCO格式的标注记录，并将其用于导出2D标注
 def generate_record(
     ann_rec: dict,
     x1: float,
@@ -635,10 +675,12 @@ def generate_record(
             - bbox (list[float]): left x, top y, dx, dy of 2d box
             - iscrowd (int): whether the area is crowd
     """
+    # 创建一个有序字典 repro_rec 用于存储生成的2D标注记录
     repro_rec = OrderedDict()
     repro_rec["sample_data_token"] = sample_data_token
+    # 创建一个字典 coco_rec 用于存储COCO格式的标注记录。
     coco_rec = dict()
-
+    # 从原始的3D注释记录中提取与标注相关的键的值，并将其存储到 repro_rec 中。
     relevant_keys = [
         "attribute_tokens",
         "category_name",
@@ -655,16 +697,17 @@ def generate_record(
     for key, value in ann_rec.items():
         if key in relevant_keys:
             repro_rec[key] = value
-
+    # 存储边界框的角点坐标、图像文件名等信息到 repro_rec 中
     repro_rec["bbox_corners"] = [x1, y1, x2, y2]
     repro_rec["filename"] = filename
-
+    # 基于2D边界框的坐标计算COCO格式的记录中的相关信息
     coco_rec["file_name"] = filename
     coco_rec["image_id"] = sample_data_token
     coco_rec["area"] = (y2 - y1) * (x2 - x1)
-
+    # 如果标注的类别名不在 NuScenesDataset.NameMapping 中，则返回 None
     if repro_rec["category_name"] not in NuScenesDataset.NameMapping:
         return None
+    # 如果存在类别名映射，将类别名映射到 nus_categories 中的索引，并存储到 coco_rec 中
     cat_name = NuScenesDataset.NameMapping[repro_rec["category_name"]]
     coco_rec["category_name"] = cat_name
     coco_rec["category_id"] = nus_categories.index(cat_name)
