@@ -45,9 +45,11 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
 
     # set cudnn_benchmark
+    # 启用CuDNN的自动优化，以加速训练过程
     torch.backends.cudnn.benchmark = True
-
+    # 不使用预训练权重
     cfg.model.pretrained = None
+    # 测试模式下加载数据集
     if isinstance(cfg.data.test, dict):
         cfg.data.test.test_mode = True
     elif isinstance(cfg.data.test, list):
@@ -56,6 +58,12 @@ def main():
 
     # build the dataloader
     dataset = build_dataset(cfg.data.test)
+    # data_loader: 使用build_dataloader()构建的数据加载器，其中包含以下参数：
+        # dataset: 要加载的数据集。
+        # samples_per_gpu: 每个GPU上的样本数。
+        # workers_per_gpu: 每个GPU上的数据加载器工作线程数。
+        # dist: 是否使用分布式训练。
+        # shuffle: 是否在每个epoch中打乱数据。
     data_loader = build_dataloader(
         dataset,
         samples_per_gpu=1,
@@ -70,12 +78,12 @@ def main():
     checkpoint = load_checkpoint(model, args.checkpoint, map_location="cpu")
 
     # old versions did not save class info in checkpoints, this walkaround is
-    # for backward compatibility
+    # for backward compatibility 旧版本没有在检查点中保存类信息，此遍历是为了向后兼容
     if "CLASSES" in checkpoint.get("meta", {}):
         model.CLASSES = checkpoint["meta"]["CLASSES"]
     else:
         model.CLASSES = dataset.CLASSES
-
+    # 设置模型为评估模式
     model.eval()
 
     with torch.no_grad():

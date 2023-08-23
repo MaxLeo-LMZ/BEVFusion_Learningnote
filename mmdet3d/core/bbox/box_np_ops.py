@@ -7,6 +7,7 @@ import numpy as np
 
 def camera_to_lidar(points, r_rect, velo2cam):
     """Convert points in camera coordinate to lidar coordinate.
+    将在相机坐标系中表示的点转换为激光雷达坐标系中表示的点
 
     Args:
         points (np.ndarray, shape=[N, 3]): Points in camera coordinate.
@@ -14,19 +15,27 @@ def camera_to_lidar(points, r_rect, velo2cam):
             specific camera coordinate (e.g. CAM2) to CAM0.
         velo2cam (np.ndarray, shape=[4, 4]): Matrix to project points in
             camera coordinate to lidar coordinate.
-
+        points：一个形状为 [N, 3] 的 NumPy 数组，表示在相机坐标系中的点。每一行都包含一个点的 [x, y, z] 坐标。
+        r_rect：一个形状为 [4, 4] 的 NumPy 数组，表示将点从特定相机坐标系（例如 CAM2）投影到 CAM0 坐标系的矩阵。
+        velo2cam：一个形状为 [4, 4] 的 NumPy 数组，表示将点从相机坐标系投影到激光雷达坐标系的矩阵。
     Returns:
         np.ndarray, shape=[N, 3]: Points in lidar coordinate.
+        函数返回一个形状为 [N, 3] 的 NumPy 数组，表示在激光雷达坐标系中的点。
     """
+    # 得到点云数
     points_shape = list(points.shape[0:-1])
+    # 判断数组中是否保护z坐标，若没有，则添加一个值为1的z坐标，以便将其转换为齐次坐标。
     if points.shape[-1] == 3:
         points = np.concatenate([points, np.ones(points_shape + [1])], axis=-1)
+    # 通过矩阵运算，将相机坐标系中的点投影到激光雷达坐标系中
     lidar_points = points @ np.linalg.inv((r_rect @ velo2cam).T)
+    # 函数返回投影到激光雷达坐标系中的点的前三个坐标（去除齐次坐标的最后一个值）
     return lidar_points[..., :3]
 
 
 def box_camera_to_lidar(data, r_rect, velo2cam):
     """Covert boxes in camera coordinate to lidar coordinate.
+    将相机坐标系中的边界框转换为激光雷达坐标系中的边界框。
 
     Args:
         data (np.ndarray, shape=[N, 7]): Boxes in camera coordinate.
@@ -34,32 +43,40 @@ def box_camera_to_lidar(data, r_rect, velo2cam):
             specific camera coordinate (e.g. CAM2) to CAM0.
         velo2cam (np.ndarray, shape=[4, 4]): Matrix to project points in
             camera coordinate to lidar coordinate.
+        data (np.ndarray, shape=[N, 7]): 相机坐标系中的边界框。
+            每一行代表一个边界框，包含 [x, y, z, 长, 高, 宽, 旋转角度]。
+        r_rect (np.ndarray, shape=[4, 4]): 将点从特定相机坐标系（例如 CAM2）投影到 CAM0 坐标系的矩阵。
+        velo2cam (np.ndarray, shape=[4, 4]): 将点从相机坐标系投影到激光雷达坐标系的矩阵。
 
     Returns:
         np.ndarray, shape=[N, 3]: Boxes in lidar coordinate.
     """
-    xyz = data[:, 0:3]
-    l, h, w = data[:, 3:4], data[:, 4:5], data[:, 5:6]
-    r = data[:, 6:7]
-    xyz_lidar = camera_to_lidar(xyz, r_rect, velo2cam)
+    xyz = data[:, 0:3] # 提取边界框的位置信息（x、y、z坐标）
+    l, h, w = data[:, 3:4], data[:, 4:5], data[:, 5:6] # 提取边界框的尺寸信息（长、高、宽）
+    r = data[:, 6:7] # 提取边界框的旋转角度信息
+    xyz_lidar = camera_to_lidar(xyz, r_rect, velo2cam) # 将边界框的位置信息从相机坐标系转换到激光雷达坐标系
+    # 将激光雷达坐标系中的边界框的位置、尺寸、旋转角度拼接在一起，形成新的边界框
     return np.concatenate([xyz_lidar, w, l, h, r], axis=1)
 
 
 def corners_nd(dims, origin=0.5):
     """Generate relative box corners based on length per dim and origin point.
-
+    基于每个维度的长度和原点生成相对的边界框角点。
     Args:
         dims (np.ndarray, shape=[N, ndim]): Array of length per dim
         origin (list or array or float, optional): origin point relate to
             smallest point. Defaults to 0.5
+        dims (np.ndarray, shape=[N, ndim]): 每个维度的长度数组。
+        origin (list 或 array 或 float, 可选): 相对于最小点的原点。默认为 0.5。
 
     Returns:
         np.ndarray, shape=[N, 2 ** ndim, ndim]: Returned corners.
+        返回的边界框角点。
         point layout example: (2d) x0y0, x0y1, x1y0, x1y1;
             (3d) x0y0z0, x0y0z1, x0y1z0, x0y1z1, x1y0z0, x1y0z1, x1y1z0, x1y1z1
             where x0 < x1, y0 < y1, z0 < z1.
     """
-    ndim = int(dims.shape[1])
+    ndim = int(dims.shape[1]) # 获取维度数
     corners_norm = np.stack(np.unravel_index(np.arange(2 ** ndim), [2] * ndim), axis=1).astype(
         dims.dtype
     )
@@ -68,36 +85,46 @@ def corners_nd(dims, origin=0.5):
     # so need to convert to a format which is convenient to do other computing.
     # for 2d boxes, format is clockwise start with minimum point
     # for 3d boxes, please draw lines by your hand.
+    # 现在 corners_norm 的格式为：(2D) x0y0, x0y1, x1y0, x1y1;
+    # (3D) x0y0z0, x0y0z1, x0y1z0, x0y1z1, x1y0z0, x1y0z1, x1y1z0, x1y1z1；
+    # 因此需要将其转换为方便进行其他计算的格式。
+    # 对于 2D 边界框，格式是从最小点开始的顺时针。
+    # 对于 3D 边界框，请手动画出线条
     if ndim == 2:
+        # 生成顺时针的角点
         # generate clockwise box corners
         corners_norm = corners_norm[[0, 1, 3, 2]]
     elif ndim == 3:
         corners_norm = corners_norm[[0, 1, 3, 2, 4, 5, 7, 6]]
-    corners_norm = corners_norm - np.array(origin, dtype=dims.dtype)
+    corners_norm = corners_norm - np.array(origin, dtype=dims.dtype)  # 将原点移动到指定位置
     corners = dims.reshape([-1, 1, ndim]) * corners_norm.reshape([1, 2 ** ndim, ndim])
-    return corners
+    return corners # 返回计算得到的边界框角点
 
 
 def rotation_2d(points, angles):
     """Rotation 2d points based on origin point clockwise when angle positive.
-
+    基于原点，按照正角度顺时针旋转二维点
     Args:
         points (np.ndarray): Points to be rotated with shape \
             (N, point_size, 2).
         angles (np.ndarray): Rotation angle with shape (N).
-
+        points (np.ndarray): 需要旋转的点，形状为 (N, point_size, 2)。
+        angles (np.ndarray): 旋转角度数组，形状为 (N)。
     Returns:
         np.ndarray: Same shape as points.
+        np.ndarray: 形状与 points 相同的数组。
     """
-    rot_sin = np.sin(angles)
-    rot_cos = np.cos(angles)
-    rot_mat_T = np.stack([[rot_cos, -rot_sin], [rot_sin, rot_cos]])
+    rot_sin = np.sin(angles) # 计算角度的正弦值
+    rot_cos = np.cos(angles) # 计算角度的余弦值
+    rot_mat_T = np.stack([[rot_cos, -rot_sin], [rot_sin, rot_cos]]) # 构建旋转矩阵的转置
     return np.einsum("aij,jka->aik", points, rot_mat_T)
 
 
 def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     """Convert kitti locations, dimensions and angles to corners.
     format: center(xy), dims(xy), angles(clockwise when positive)
+    将Kitti标签中的位置、尺寸和角度转换为边界框角点（2D）。
+    格式: 中心(xy)、尺寸(xy)、角度（正值顺时针方向）。
 
     Args:
         centers (np.ndarray): Locations in kitti label file with shape (N, 2).
@@ -106,6 +133,10 @@ def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
             shape (N). Defaults to None.
         origin (list or array or float, optional): origin point relate to
             smallest point. Defaults to 0.5.
+        centers (np.ndarray): Kitti标签文件中的位置，形状为 (N, 2)。
+        dims (np.ndarray): Kitti标签文件中的尺寸，形状为 (N, 2)。
+        angles (np.ndarray, 可选): Kitti标签文件中的旋转角度（角度制），形状为 (N)。默认为 None。
+        origin (list 或 array 或 float, 可选): 相对于最小点的原点。默认为 0.5。
 
     Returns:
         np.ndarray: Corners with the shape of (N, 4, 2).
@@ -113,7 +144,10 @@ def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     # 'length' in kitti format is in x axis.
     # xyz(hwl)(kitti label file)<->xyz(lhw)(camera)<->z(-x)(-y)(wlh)(lidar)
     # center in kitti format is [0.5, 1.0, 0.5] in xyz.
-    corners = corners_nd(dims, origin=origin)
+    # Kitti格式中的'length'位于x轴。
+    # xyz(hwl)(Kitti标签文件)<->xyz(lhw)(相机)<->z(-x)(-y)(wlh)(激光雷达)
+    # Kitti格式中的中心为[0.5, 1.0, 0.5]。
+    corners = corners_nd(dims, origin=origin) # 根据尺寸生成边界框角点
     # corners: [N, 4, 2]
     if angles is not None:
         corners = rotation_2d(corners, angles)
@@ -124,7 +158,7 @@ def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
 @numba.jit(nopython=True)
 def depth_to_points(depth, trunc_pixel):
     """Convert depth map to points.
-
+    将深度图转换为点云。
     Args:
         depth (np.array, shape=[H, W]): Depth map which
             the row of [0~`trunc_pixel`] are truncated.
@@ -153,7 +187,7 @@ def depth_to_points(depth, trunc_pixel):
 
 def depth_to_lidar_points(depth, trunc_pixel, P2, r_rect, velo2cam):
     """Convert depth map to points in lidar coordinate.
-
+    将深度图转换为激光雷达坐标系中的点云。
     Args:
         depth (np.array, shape=[H, W]): Depth map which
             the row of [0~`trunc_pixel`] are truncated.
@@ -177,41 +211,43 @@ def depth_to_lidar_points(depth, trunc_pixel, P2, r_rect, velo2cam):
 
 def rotation_3d_in_axis(points, angles, axis=0):
     """Rotate points in specific axis.
-
+    绕指定轴旋转三维点云
     Args:
         points (np.ndarray, shape=[N, point_size, 3]]):
         angles (np.ndarray, shape=[N]]):
         axis (int, optional): Axis to rotate at. Defaults to 0.
-
+        points (np.ndarray, shape=[N, point_size, 3]]): 三维点云，形状为 (N, point_size, 3)。
+        angles (np.ndarray, shape=[N]]): 旋转角度，形状为 (N)。
+        axis (int, 可选): 旋转轴。默认为 0
     Returns:
         np.ndarray: Rotated points.
     """
     # points: [N, point_size, 3]
-    rot_sin = np.sin(angles)
-    rot_cos = np.cos(angles)
-    ones = np.ones_like(rot_cos)
-    zeros = np.zeros_like(rot_cos)
+    rot_sin = np.sin(angles) # 计算角度的正弦值
+    rot_cos = np.cos(angles) # 计算角度的余弦值
+    ones = np.ones_like(rot_cos) # 全为 1 的数组，用于构造旋转矩阵的部分元素
+    zeros = np.zeros_like(rot_cos) # 全为 0 的数组，用于构造旋转矩阵的部分元素
     if axis == 1:
         rot_mat_T = np.stack(
             [[rot_cos, zeros, -rot_sin], [zeros, ones, zeros], [rot_sin, zeros, rot_cos]]
-        )
+        ) # 构造绕 Y 轴旋转的矩阵
     elif axis == 2 or axis == -1:
         rot_mat_T = np.stack(
             [[rot_cos, -rot_sin, zeros], [rot_sin, rot_cos, zeros], [zeros, zeros, ones]]
-        )
+        ) # 构造绕 Z 轴旋转的矩阵
     elif axis == 0:
         rot_mat_T = np.stack(
             [[zeros, rot_cos, -rot_sin], [zeros, rot_sin, rot_cos], [ones, zeros, zeros]]
-        )
+        )  # 构造绕 X 轴旋转的矩阵
     else:
-        raise ValueError("axis should in range")
+        raise ValueError("axis should in range") # 报错，不支持的轴
 
-    return np.einsum("aij,jka->aik", points, rot_mat_T)
+    return np.einsum("aij,jka->aik", points, rot_mat_T)  # 通过矩阵乘法进行旋转
 
 
 def center_to_corner_box3d(centers, dims, angles=None, origin=(0.5, 1.0, 0.5), axis=1):
     """Convert kitti locations, dimensions and angles to corners.
-
+    将 KITTI 数据集中的位置、尺寸和角度信息转换为三维框的顶点坐标。
     Args:
         centers (np.ndarray): Locations in kitti label file with shape (N, 3).
         dims (np.ndarray): Dimensions in kitti label file with shape (N, 3).
