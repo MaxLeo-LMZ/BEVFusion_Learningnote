@@ -1,6 +1,7 @@
 # BEVFusion
 
-本Fork代码仓库复制于https://github.com/mit-han-lab/bevfusion，作为本人记录学习BEVFusion的学习笔记使用，会逐步理解代码并添加大量中文注释。
+本Fork代码仓库复制于https://github.com/mit-han-lab/bevfusion
+作为本人记录学习BEVFusion的学习笔记使用，会逐步理解代码并添加大量中文注释。
 本仓库代码已参照[《bevfusion单显卡训练/测试》](https://blog.csdn.net/ll594282475/article/details/127925826?spm=1001.2014.3001.5502)做了单GPU训练和测试的修改。
 并在本人主机上做过了测试。
 
