@@ -4,6 +4,10 @@
 本仓库代码已参照[《bevfusion单显卡训练/测试》](https://blog.csdn.net/ll594282475/article/details/127925826?spm=1001.2014.3001.5502)做了单GPU训练和测试的修改。
 并在本人主机上做过了测试。
 
+## 设备
+显卡：RTX 3090 24G
+## 环境
+CUDA == 11.3
 ## 数据预处理
 ```bash
 # nusenes数据集
