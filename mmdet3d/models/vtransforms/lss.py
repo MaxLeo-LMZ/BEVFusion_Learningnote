@@ -9,7 +9,7 @@ from .base import BaseTransform
 
 __all__ = ["LSSTransform"]
 
-
+# 使用装饰器将类注册为VTRANSFORMS中的变换模块
 @VTRANSFORMS.register_module()
 class LSSTransform(BaseTransform):
     def __init__(
@@ -34,9 +34,11 @@ class LSSTransform(BaseTransform):
             zbound=zbound,
             dbound=dbound,
         )
+        # 创建深度估计网络
         self.depthnet = nn.Conv2d(in_channels, self.D + self.C, 1)
         if downsample > 1:
             assert downsample == 2, downsample
+            # 创建下采样模块
             self.downsample = nn.Sequential(
                 nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
                 nn.BatchNorm2d(out_channels),
@@ -58,6 +60,7 @@ class LSSTransform(BaseTransform):
         else:
             self.downsample = nn.Identity()
 
+    # 强制使用fp32类型进行计算的前向传播
     @force_fp32()
     def get_cam_feats(self, x):
         B, N, C, fH, fW = x.shape
@@ -72,6 +75,7 @@ class LSSTransform(BaseTransform):
         x = x.permute(0, 1, 3, 4, 5, 2)
         return x
 
+    # 前向传播函数
     def forward(self, *args, **kwargs):
         x = super().forward(*args, **kwargs)
         x = self.downsample(x)

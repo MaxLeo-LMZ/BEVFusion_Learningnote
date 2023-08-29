@@ -13,10 +13,10 @@ from torch.nn import functional as F
 
 from mmdet3d.models.builder import build_backbone
 from mmdet.models import BACKBONES
-
+# 定义可导出的类名
 __all__ = ["PillarFeatureNet", "PointPillarsScatter", "PointPillarsEncoder"]
 
-
+# 定义一个函数，用于根据实际点数生成布尔掩码
 def get_paddings_indicator(actual_num, max_num, axis=0):
     """Create boolean mask by actually number of a padded tensor.
     Args:
@@ -39,7 +39,7 @@ def get_paddings_indicator(actual_num, max_num, axis=0):
     # paddings_indicator shape: [batch_size, max_num]
     return paddings_indicator
 
-
+# 定义一个特征提取层类
 class PFNLayer(nn.Module):
     def __init__(self, in_channels, out_channels, norm_cfg=None, last_layer=False):
         """
@@ -82,7 +82,7 @@ class PFNLayer(nn.Module):
             x_concatenated = torch.cat([x, x_repeat], dim=2)
             return x_concatenated
 
-
+# 定义PillarFeatureNet类，用于特征提取
 @BACKBONES.register_module()
 class PillarFeatureNet(nn.Module):
     def __init__(
@@ -108,7 +108,7 @@ class PillarFeatureNet(nn.Module):
         super().__init__()
         self.name = "PillarFeatureNet"
         assert len(feat_channels) > 0
-
+        # 初始化各个参数
         self.in_channels = in_channels
         in_channels += 5
         if with_distance:
@@ -132,7 +132,7 @@ class PillarFeatureNet(nn.Module):
             )
         self.pfn_layers = nn.ModuleList(pfn_layers)
 
-        # Need pillar (voxel) size and x/y offset in order to calculate pillar offset
+        # Need pillar (voxel) size and x/y offset in order to calculate pillar offset # 计算偏移量
         self.vx = voxel_size[0]
         self.vy = voxel_size[1]
         self.x_offset = self.vx / 2 + point_cloud_range[0]
@@ -145,11 +145,12 @@ class PillarFeatureNet(nn.Module):
 
         # Find distance of x, y, and z from cluster center
         # features = features[:, :, :self.num_input]
+        # 计算点到聚类中心的距离
         points_mean = features[:, :, :3].sum(dim=1, keepdim=True) / num_voxels.type_as(
             features
         ).view(-1, 1, 1)
         f_cluster = features[:, :, :3] - points_mean
-
+        # 计算点到pillar中心的距离
         # Find distance of x, y, and z from pillar center
         # f_center = features[:, :, :2]
         # modified according to xyz coords
@@ -160,28 +161,28 @@ class PillarFeatureNet(nn.Module):
         f_center[:, :, 1] = features[:, :, 1] - (
             coors[:, 2].to(dtype).unsqueeze(1) * self.vy + self.y_offset
         )
-
+        # 将各个特征合并
         # Combine together feature decorations
         features_ls = [features, f_cluster, f_center]
         if self._with_distance:
             points_dist = torch.norm(features[:, :, :3], 2, 2, keepdim=True)
             features_ls.append(points_dist)
         features = torch.cat(features_ls, dim=-1)
-
+        # 将空的pillar设置为零
         # The feature decorations were calculated without regard to whether pillar was empty. Need to ensure that
         # empty pillars remain set to zeros.
         voxel_count = features.shape[1]
         mask = get_paddings_indicator(num_voxels, voxel_count, axis=0)
         mask = torch.unsqueeze(mask, -1).type_as(features)
         features *= mask
-
+        # 通过PFN层进行前向传播
         # Forward pass through PFNLayers
         for pfn in self.pfn_layers:
             features = pfn(features)
 
         return features.squeeze()
 
-
+# 定义PointPillarsScatter类，用于将特征散射成稀疏伪图像
 @BACKBONES.register_module()
 class PointPillarsScatter(nn.Module):
     def __init__(self, in_channels=64, output_shape=(512, 512), **kwargs):
@@ -205,10 +206,10 @@ class PointPillarsScatter(nn.Module):
         )
 
     def forward(self, voxel_features, coords, batch_size):
-        # batch_canvas will be the final output.
+        # batch_canvas will be the final output. Batch_canvas将是最终输出。
         batch_canvas = []
         for batch_itt in range(batch_size):
-            # Create the canvas for this sample
+            # Create the canvas for this sample 为这个示例创建画布
             canvas = torch.zeros(
                 self.in_channels,
                 self.nx * self.ny,
@@ -216,7 +217,7 @@ class PointPillarsScatter(nn.Module):
                 device=voxel_features.device,
             )
 
-            # Only include non-empty pillars
+            # Only include non-empty pillars 只包括非空柱子
             batch_mask = coords[:, 0] == batch_itt
 
             this_coords = coords[batch_mask, :]
@@ -226,20 +227,22 @@ class PointPillarsScatter(nn.Module):
             voxels = voxel_features[batch_mask, :]
             voxels = voxels.t()
 
-            # Now scatter the blob back to the canvas.
+            # Now scatter the blob back to the canvas. 现在将斑点分散到画布上。
             canvas[:, indices] = voxels
 
-            # Append to a list for later stacking.
+            # Append to a list for later stacking. 添加到列表中，以便稍后堆叠
             batch_canvas.append(canvas)
 
         # Stack to 3-dim tensor (batch-size, nchannels, nrows*ncols)
+        # 栈到3维张量(batch-size, nchannels, nrows*ncols)
         batch_canvas = torch.stack(batch_canvas, 0)
 
         # Undo the column stacking to final 4-dim tensor
+        # 撤销对最终4维张量的列堆叠
         batch_canvas = batch_canvas.view(batch_size, self.in_channels, self.nx, self.ny)
         return batch_canvas
 
-
+# 定义PointPillarsEncoder类，用于编码点云特征
 @BACKBONES.register_module()
 class PointPillarsEncoder(nn.Module):
     def __init__(
